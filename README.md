@@ -2,7 +2,10 @@
 
 ## Description
 
-A Forta Agent that detects anomalous function calls.
+A Forta Agent that detects anomalous function calls. Currently, the anomaly detection involves the following observations:
+
+1. The function selector of the call.
+2. Attributes of the caller like the frequency of calls and others.
 
 ## Supported Chains
 

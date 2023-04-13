@@ -70,32 +70,47 @@ def parse_traces(transaction_event: TransactionEvent):
             print(
                 f"[{len(cached_function_calls[contract])}] Detecting anomaly for contract {contract} with selector {selector}")
             # construct dataset
-            # one-hot encoded function selectors + percentage of calls from caller
-            n_feats = len(cached_contract_selectors[contract]) + 1
+            # 1. one-hot encoded function selectors
+            # 2. percentage of calls from caller
+            # 3. percentage of calls to this selector
+            n_feats = len(cached_contract_selectors[contract]) + 2
             train, test = np.zeros((len(cached_function_calls[contract]), n_feats)), np.zeros((1, n_feats))
             total_sum_calls = [0 for _ in range(len(cached_contract_selectors[contract]))]
-            user_sum_calls = [{} for _ in range(len(cached_contract_selectors[contract]))]
+            user_sum_calls = {}
+            user_func_sum_calls = [{} for _ in range(len(cached_contract_selectors[contract]))]
             # construct train features
             for i, record in enumerate(cached_function_calls[contract].values()):
                 train_caller, train_selector_index = record
-                if train_caller not in user_sum_calls[train_selector_index]:
-                    user_sum_calls[train_selector_index][train_caller] = 0
-                user_sum_calls[train_selector_index][train_caller] += 1
+                if train_caller not in user_func_sum_calls[train_selector_index]:
+                    user_func_sum_calls[train_selector_index][train_caller] = 0
+                user_func_sum_calls[train_selector_index][train_caller] += 1
+                if train_caller not in user_sum_calls:
+                    user_sum_calls[train_caller] = 0
+                user_sum_calls[train_caller] += 1
                 total_sum_calls[train_selector_index] += 1
                 # one-hot encoded function selectors
                 train[i, train_selector_index] = 1
                 # percentage of calls from caller
-                train[i, len(cached_contract_selectors[contract])] = user_sum_calls[train_selector_index][
+                train[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[train_selector_index][
                                                                          train_caller] / total_sum_calls[
                                                                          train_selector_index]
+                # percentage of calls to this function selector
+                train[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[train_selector_index][
+                                                                             train_caller] / user_sum_calls[
+                                                                train_caller]
             # construct test features
-            if caller not in user_sum_calls[selector_index]:
-                user_sum_calls[selector_index][caller] = 0
-            user_sum_calls[selector_index][caller] += 1
+            if caller not in user_func_sum_calls[selector_index]:
+                user_func_sum_calls[selector_index][caller] = 0
+            user_func_sum_calls[selector_index][caller] += 1
+            if caller not in user_sum_calls:
+                user_sum_calls[caller] = 0
+            user_sum_calls[caller] += 1
             total_sum_calls[selector_index] += 1
             test[0, selector_index] = 1
-            test[0, len(cached_contract_selectors[contract])] = user_sum_calls[selector_index][caller] / \
+            test[0, len(cached_contract_selectors[contract])] = user_func_sum_calls[selector_index][caller] / \
                                                                 total_sum_calls[selector_index]
+            test[0, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[selector_index][caller] / \
+                                                                    user_sum_calls[caller]
 
             # predict
             detector.fit(train)
@@ -113,13 +128,12 @@ def parse_traces(transaction_event: TransactionEvent):
 
 def handle_transaction(transaction_event: TransactionEvent):
     findings = []
-    parse_traces(transaction_event)
     anomaly_detections = parse_traces(transaction_event)
 
     caller = transaction_event.transaction.from_
     for detection in anomaly_detections:
         contract_address, selector, anomaly_score, confidence = detection
-        if anomaly_score > 0.5:
+        if anomaly_score > config.ANOMALY_THRESHOLD:
             findings.append(Finding({
                 'name': f'Abnormal Function Call Detected',
                 'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
@@ -157,7 +171,7 @@ def handle_transaction(transaction_event: TransactionEvent):
 
 
 def handle_block(block_event: BlockEvent):
-    if block_event.block.number % 1000 == 0:
+    if block_event.block.number % 3600 == 0:  # 12 hours
         n_clean = 0
         for contract, ttl_cache in cached_function_calls.items():
             if len(ttl_cache) == 0:
