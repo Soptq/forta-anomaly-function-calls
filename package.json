@@ -1,7 +1,7 @@
 {
   "name": "forta-anomaly-function-calls",
   "version": "0.0.1",
-  "description": "A Forta Agent that detects anomalous function calls",
+  "description": "A Forta Agent that detects anomalous function calls using anomaly detection",
   "repository": "https://github.com/forta-network/forta-bot-sdk/tree/master/starter-project",
   "chainIds": [
     1, 10, 56, 137, 250, 42161, 43114
