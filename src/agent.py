@@ -17,44 +17,60 @@ warnings.filterwarnings('ignore')
 
 def parse_traces(transaction_event: TransactionEvent):
     findings = []
+    print(f"Parsing {len(transaction_event.traces)} traces for transaction {transaction_event.transaction.hash}")
 
-    # get all traces with `call` type
-    for trace in transaction_event.traces:
-        if trace.error is not None:
-            continue
-        # deal with suicided contract
-        if trace.type == 'suicide':
-            suicided_contract = trace.action.address
-            if suicided_contract in cached_contract_selectors:
-                del cached_contract_selectors[suicided_contract]
-            if suicided_contract in cached_function_calls:
-                del cached_function_calls[suicided_contract]
-            continue
+    function_calls = []
+    if len(transaction_event.traces) > 0:
+        # get all traces with `call` type
+        for trace in transaction_event.traces:
+            if trace.error is not None:
+                continue
+            # deal with suicided contract
+            if trace.type == 'suicide':
+                suicided_contract = trace.action.address
+                if suicided_contract in cached_contract_selectors:
+                    del cached_contract_selectors[suicided_contract]
+                if suicided_contract in cached_function_calls:
+                    del cached_function_calls[suicided_contract]
+                continue
 
-        if trace.type != 'call':
-            continue
-        if trace.action.input == '0x':
+            if trace.type != 'call':
+                continue
+            if trace.action.input == '0x':
+                # regular transfer, not a contract call
+                continue
+
+            if trace.action.call_type == 'call':
+                caller = trace.action.from_
+                contract = trace.action.to
+            elif trace.action.call_type == 'callcode':
+                # proxy call, there will be another call trace with call_type `call` or `staticcall`
+                # so we will ignore it
+                continue
+            elif trace.action.call_type == 'delegatecall':
+                # proxy call, there will be another call trace with call_type `call` or `staticcall` to the proxy contract
+                # so we will ignore it
+                continue
+            elif trace.action.call_type == 'staticcall':
+                # this is a read-only call, should not cause any state changes
+                continue
+            else:
+                raise Exception(f'Unknown call type {trace.action.call_type}')
+
+            function_calls.append((caller, contract, trace.action.input))
+    else:
+        # no traces, this is a regular transaction
+        if transaction_event.transaction.data == '0x':
             # regular transfer, not a contract call
-            continue
+            return findings
+        caller = transaction_event.transaction.from_
+        contract = transaction_event.transaction.to
+        _input = transaction_event.transaction.data
+        function_calls.append((caller, contract, _input))
 
-        if trace.action.call_type == 'call':
-            caller = trace.action.from_
-            contract = trace.action.to
-        elif trace.action.call_type == 'callcode':
-            # proxy call, there will be another call trace with call_type `call` or `staticcall`
-            # so we will ignore it
-            continue
-        elif trace.action.call_type == 'delegatecall':
-            # proxy call, there will be another call trace with call_type `call` or `staticcall` to the proxy contract
-            # so we will ignore it
-            continue
-        elif trace.action.call_type == 'staticcall':
-            # this is a read-only call, should not cause any state changes
-            continue
-        else:
-            raise Exception(f'Unknown call type {trace.action.call_type}')
-
-        selector = trace.action.input[:10]
+    for function_call in function_calls:
+        caller, contract, _input = function_call
+        selector = _input[:10]
 
         if contract not in cached_contract_selectors:
             cached_contract_selectors[contract] = []
@@ -97,7 +113,7 @@ def parse_traces(transaction_event: TransactionEvent):
                 # percentage of calls to this function selector
                 train[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[train_selector_index][
                                                                              train_caller] / user_sum_calls[
-                                                                train_caller]
+                                                                             train_caller]
             # construct test features
             if caller not in user_func_sum_calls[selector_index]:
                 user_func_sum_calls[selector_index][caller] = 0
