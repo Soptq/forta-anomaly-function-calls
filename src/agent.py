@@ -81,10 +81,11 @@ def parse_traces(transaction_event: TransactionEvent):
         if contract not in cached_function_calls:
             cached_function_calls[contract] = cachetools.TTLCache(maxsize=2 ** 20, ttl=config.HISTORY_TTL)
 
-        time_to_collect = max(cached_function_calls[contract].keys()) - min(cached_function_calls[contract].keys())
+        time_to_collect = max(cached_function_calls[contract].keys()) - min(cached_function_calls[contract].keys()) if len(
+            cached_function_calls[contract]) > 0 else 0
         if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
             print(
-                f"[{len(cached_function_calls[contract])}] Detecting anomaly for contract {contract} with selector {selector}")
+                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selector {selector}")
             # construct dataset
             # 1. one-hot encoded function selectors
             # 2. percentage of calls from caller
@@ -135,7 +136,7 @@ def parse_traces(transaction_event: TransactionEvent):
             findings.append((contract, selector, probs[0, 1], confidence[0]))
         else:
             print(
-                f"[{len(cached_function_calls[contract])}] Not enough records for contract {contract} with selector {selector}")
+                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with selector {selector}")
 
         cached_function_calls[contract][time.time_ns()] = (caller, selector_index)
 
