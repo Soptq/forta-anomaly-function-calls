@@ -143,43 +143,47 @@ def parse_traces(transaction_event: TransactionEvent):
 
 
 def handle_transaction(transaction_event: TransactionEvent):
-    findings = []
-    anomaly_detections = parse_traces(transaction_event)
+    try:
+        findings = []
+        anomaly_detections = parse_traces(transaction_event)
 
-    caller = transaction_event.transaction.from_
-    for detection in anomaly_detections:
-        contract_address, selector, anomaly_score, confidence = detection
-        if anomaly_score > config.ANOMALY_THRESHOLD:
-            findings.append(Finding({
-                'name': f'Abnormal Function Call Detected',
-                'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
-                'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
-                'severity': FindingSeverity.Medium,
-                'type': FindingType.Suspicious,
-                'metadata': {
-                    'contract_address': contract_address,
-                    'caller': caller,
-                    'function_selector': selector,
-                    'anomaly_score': anomaly_score,
-                    'confidence': confidence,
-                },
-                "labels": [
-                    Label({
-                        "entity": caller,
-                        "entity_type": EntityType.Address,
-                        "label": "attack",
-                        "confidence": confidence
-                    }),
-                    Label({
-                        "entity": contract_address,
-                        "entity_type": EntityType.Address,
-                        "label": "attack",
-                        "confidence": confidence
-                    }),
-                ]
-            }))
+        caller = transaction_event.transaction.from_
+        for detection in anomaly_detections:
+            contract_address, selector, anomaly_score, confidence = detection
+            if anomaly_score > config.ANOMALY_THRESHOLD:
+                findings.append(Finding({
+                    'name': f'Abnormal Function Call Detected',
+                    'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
+                    'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
+                    'severity': FindingSeverity.Medium,
+                    'type': FindingType.Suspicious,
+                    'metadata': {
+                        'contract_address': contract_address,
+                        'caller': caller,
+                        'function_selector': selector,
+                        'anomaly_score': anomaly_score,
+                        'confidence': confidence,
+                    },
+                    "labels": [
+                        Label({
+                            "entity": caller,
+                            "entity_type": EntityType.Address,
+                            "label": "attack",
+                            "confidence": confidence
+                        }),
+                        Label({
+                            "entity": contract_address,
+                            "entity_type": EntityType.Address,
+                            "label": "attack",
+                            "confidence": confidence
+                        }),
+                    ]
+                }))
 
-    return findings
+        return findings
+    except Exception as e:
+        print(e)
+        return []
 
 
 # def initialize():
