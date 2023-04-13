@@ -18,7 +18,7 @@ def parse_traces(transaction_event: TransactionEvent):
     findings = []
     print(f"Parsing {len(transaction_event.traces)} traces for transaction {transaction_event.transaction.hash}")
 
-    function_calls = []
+    function_calls = {}
     if len(transaction_event.traces) > 0:
         # get all traces with `call` type
         for trace in transaction_event.traces:
@@ -56,7 +56,9 @@ def parse_traces(transaction_event: TransactionEvent):
             else:
                 raise Exception(f'Unknown call type {trace.action.call_type}')
 
-            function_calls.append((caller, contract, trace.action.input))
+            if contract not in function_calls:
+                function_calls[contract] = []
+            function_calls[contract].append((caller, trace.action.input))
     else:
         # no traces, this is a regular transaction
         if transaction_event.transaction.data.lower() == '0x':
@@ -65,18 +67,25 @@ def parse_traces(transaction_event: TransactionEvent):
         caller = transaction_event.transaction.from_
         contract = transaction_event.transaction.to
         _input = transaction_event.transaction.data
-        function_calls.append((caller, contract, _input))
+        if contract not in function_calls:
+            function_calls[contract] = []
+        function_calls[contract].append((caller, _input))
 
-    for function_call in function_calls:
-        caller, contract, _input = function_call
-        selector = _input[:10]
+    for contract, data in function_calls.items():
+        callers, _inputs = [], []
+        for datum in data:
+            caller, _input = datum
+            callers.append(caller)
+            _inputs.append(_input)
+        selectors = [inp[:10] for inp in _inputs]
 
         if contract not in cached_contract_selectors:
             cached_contract_selectors[contract] = []
-        if selector not in cached_contract_selectors[contract]:
-            cached_contract_selectors[contract].append(selector)
+        for selector in selectors:
+            if selector not in cached_contract_selectors[contract]:
+                cached_contract_selectors[contract].append(selector)
 
-        selector_index = cached_contract_selectors[contract].index(selector)
+        selector_indexes = [cached_contract_selectors[contract].index(selector) for selector in selectors]
 
         if contract not in cached_function_calls:
             cached_function_calls[contract] = cachetools.TTLCache(maxsize=2 ** 20, ttl=config.HISTORY_TTL)
@@ -85,13 +94,13 @@ def parse_traces(transaction_event: TransactionEvent):
             cached_function_calls[contract]) > 0 else 0
         if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
             print(
-                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selector {selector}")
+                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selectors {selectors}, batch size {len(data)}")
             # construct dataset
             # 1. one-hot encoded function selectors
             # 2. percentage of calls from caller
             # 3. percentage of calls to this selector
             n_feats = len(cached_contract_selectors[contract]) + 2
-            train, test = np.zeros((len(cached_function_calls[contract]), n_feats)), np.zeros((1, n_feats))
+            train, test = np.zeros((len(cached_function_calls[contract]), n_feats)), np.zeros((len(data), n_feats))
             total_sum_calls = [0 for _ in range(len(cached_contract_selectors[contract]))]
             user_sum_calls = {}
             user_func_sum_calls = [{} for _ in range(len(cached_contract_selectors[contract]))]
@@ -116,29 +125,32 @@ def parse_traces(transaction_event: TransactionEvent):
                                                                              train_caller] / user_sum_calls[
                                                                              train_caller]
             # construct test features
-            if caller not in user_func_sum_calls[selector_index]:
-                user_func_sum_calls[selector_index][caller] = 0
-            user_func_sum_calls[selector_index][caller] += 1
-            if caller not in user_sum_calls:
-                user_sum_calls[caller] = 0
-            user_sum_calls[caller] += 1
-            total_sum_calls[selector_index] += 1
-            test[0, selector_index] = 1
-            test[0, len(cached_contract_selectors[contract])] = user_func_sum_calls[selector_index][caller] / \
-                                                                total_sum_calls[selector_index]
-            test[0, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[selector_index][caller] / \
-                                                                    user_sum_calls[caller]
+            for i, (test_caller, test_selector_index) in enumerate(zip(callers, selector_indexes)):
+                if test_caller not in user_func_sum_calls[test_selector_index]:
+                    user_func_sum_calls[test_selector_index][test_caller] = 0
+                user_func_sum_calls[test_selector_index][test_caller] += 1
+                if test_caller not in user_sum_calls:
+                    user_sum_calls[test_caller] = 0
+                user_sum_calls[test_caller] += 1
+                total_sum_calls[test_selector_index] += 1
+                test[i, test_selector_index] = 1
+                test[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[test_selector_index][test_caller] / \
+                                                                    total_sum_calls[test_selector_index]
+                test[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[test_selector_index][test_caller] / \
+                                                                        user_sum_calls[test_caller]
 
             # predict
             detector.fit(train)
-            probs, confidence = detector.predict_proba(test, return_confidence=True)
-            print(f"Anomaly score for {contract} with selector {selector}: {probs[0, 1]}:{confidence[0]}")
-            findings.append((contract, selector, probs[0, 1], confidence[0]))
+            probs, confidences = detector.predict_proba(test, return_confidence=True)
+            print(f"Anomaly score for {contract} with selector {selector}: {probs}:{confidences}")
+            for prob, confidence in zip(probs, confidences):
+                findings.append((contract, selector, prob[1], confidence))
         else:
             print(
-                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with selector {selector}")
+                f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with selector {selector}, batch size {len(data)}")
 
-        cached_function_calls[contract][time.time_ns()] = (caller, selector_index)
+        for i, (caller, selector_index) in enumerate(zip(callers, selector_indexes)):
+            cached_function_calls[contract][time.time_ns()] = (caller, selector_index)
 
     return findings
 
