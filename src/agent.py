@@ -3,7 +3,6 @@ from forta_agent import Finding, FindingType, FindingSeverity, TransactionEvent,
 import warnings
 import cachetools
 import time
-from sklearn.neighbors import LocalOutlierFactor
 from pyod.models.ecod import ECOD
 import numpy as np
 import src.config as config
@@ -82,7 +81,8 @@ def parse_traces(transaction_event: TransactionEvent):
         if contract not in cached_function_calls:
             cached_function_calls[contract] = cachetools.TTLCache(maxsize=2 ** 20, ttl=config.HISTORY_TTL)
 
-        if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT:
+        time_to_collect = max(cached_function_calls[contract].keys()) - min(cached_function_calls[contract].keys())
+        if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
             print(
                 f"[{len(cached_function_calls[contract])}] Detecting anomaly for contract {contract} with selector {selector}")
             # construct dataset
