@@ -25,7 +25,7 @@ def parse_traces(transaction_event: TransactionEvent):
             if trace.error is not None:
                 continue
             # deal with suicided contract
-            if trace.type == 'suicide':
+            if trace.type.lower() == 'suicide':
                 suicided_contract = trace.action.address
                 if suicided_contract in cached_contract_selectors:
                     del cached_contract_selectors[suicided_contract]
@@ -33,24 +33,24 @@ def parse_traces(transaction_event: TransactionEvent):
                     del cached_function_calls[suicided_contract]
                 continue
 
-            if trace.type != 'call':
+            if trace.type.lower() != 'call':
                 continue
-            if trace.action.input == '0x':
+            if trace.action.input.lower() == '0x':
                 # regular transfer, not a contract call
                 continue
 
-            if trace.action.call_type == 'call':
+            if trace.action.call_type.lower() == 'call':
                 caller = trace.action.from_
                 contract = trace.action.to
-            elif trace.action.call_type == 'callcode':
+            elif trace.action.call_type.lower() == 'callcode':
                 # proxy call, there will be another call trace with call_type `call` or `staticcall`
                 # so we will ignore it
                 continue
-            elif trace.action.call_type == 'delegatecall':
+            elif trace.action.call_type.lower() == 'delegatecall':
                 # proxy call, there will be another call trace with call_type `call` or `staticcall` to the proxy contract
                 # so we will ignore it
                 continue
-            elif trace.action.call_type == 'staticcall':
+            elif trace.action.call_type.lower() == 'staticcall':
                 # this is a read-only call, should not cause any state changes
                 continue
             else:
@@ -59,7 +59,7 @@ def parse_traces(transaction_event: TransactionEvent):
             function_calls.append((caller, contract, trace.action.input))
     else:
         # no traces, this is a regular transaction
-        if transaction_event.transaction.data == '0x':
+        if transaction_event.transaction.data.lower() == '0x':
             # regular transfer, not a contract call
             return findings
         caller = transaction_event.transaction.from_
