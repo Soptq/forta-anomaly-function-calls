@@ -9,7 +9,7 @@ import src.config as config
 
 cached_contract_selectors = {}
 cached_function_calls = {}
-detector = ECOD(contamination=1e-5, n_jobs=1)
+detector = ECOD(contamination=config.NOISE_SCALAR, n_jobs=1)
 warnings.filterwarnings("error")
 
 
@@ -151,10 +151,13 @@ def parse_traces(transaction_event: TransactionEvent):
                     config.NOISE_SCALAR)
 
             # predict
-            detector.fit(train)
+            try:
+                detector.fit(train)
+            except:
+                continue
             probs, confidences = detector.predict_proba(test, return_confidence=True)
             print(f"Anomaly score for {contract} with selector {selectors}: {probs}:{confidences}")
-            for prob, confidence in zip(probs, confidences):
+            for selector, prob, confidence in zip(selectors, probs, confidences):
                 findings.append((contract, selector, prob[1], confidence))
         else:
             print(
@@ -172,37 +175,43 @@ def handle_transaction(transaction_event: TransactionEvent):
         anomaly_detections = parse_traces(transaction_event)
 
         caller = transaction_event.transaction.from_
+
+        max_anomaly = (None, None, 0., None)
         for detection in anomaly_detections:
             contract_address, selector, anomaly_score, confidence = detection
-            if anomaly_score > config.ANOMALY_THRESHOLD:
-                findings.append(Finding({
-                    'name': f'Abnormal Function Call Detected',
-                    'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
-                    'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
-                    'severity': FindingSeverity.Medium,
-                    'type': FindingType.Suspicious,
-                    'metadata': {
-                        'contract_address': contract_address,
-                        'caller': caller,
-                        'function_selector': selector,
-                        'anomaly_score': anomaly_score,
-                        'confidence': confidence,
-                    },
-                    "labels": [
-                        Label({
-                            "entity": caller,
-                            "entity_type": EntityType.Address,
-                            "label": "attack",
-                            "confidence": confidence
-                        }),
-                        Label({
-                            "entity": contract_address,
-                            "entity_type": EntityType.Address,
-                            "label": "attack",
-                            "confidence": confidence
-                        }),
-                    ]
-                }))
+            if anomaly_score > max_anomaly[2]:
+                max_anomaly = (contract_address, selector, anomaly_score, confidence)
+
+        if max_anomaly[2] > config.ANOMALY_THRESHOLD:
+            contract_address, selector, anomaly_score, confidence = max_anomaly
+            findings.append(Finding({
+                'name': f'Abnormal Function Call Detected',
+                'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
+                'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
+                'severity': FindingSeverity.Medium,
+                'type': FindingType.Suspicious,
+                'metadata': {
+                    'contract_address': contract_address,
+                    'caller': caller,
+                    'function_selector': selector,
+                    'anomaly_score': anomaly_score,
+                    'confidence': confidence,
+                },
+                "labels": [
+                    Label({
+                        "entity": caller,
+                        "entity_type": EntityType.Address,
+                        "label": "attack",
+                        "confidence": confidence
+                    }),
+                    Label({
+                        "entity": contract_address,
+                        "entity_type": EntityType.Address,
+                        "label": "attack",
+                        "confidence": confidence
+                    }),
+                ]
+            }))
 
         return findings
     except Exception as e:
