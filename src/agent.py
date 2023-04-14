@@ -95,8 +95,9 @@ def parse_traces(transaction_event: TransactionEvent):
         time_to_collect = max(cached_function_calls[contract].keys()) - min(
             cached_function_calls[contract].keys()) if len(
             cached_function_calls[contract]) > 0 else 0
-        if len(cached_function_calls[
-                   contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
+        if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT or (
+                time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(
+            cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME):
             print(
                 f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selectors {selectors}, batch size {len(data)}")
             # construct dataset
@@ -108,7 +109,7 @@ def parse_traces(transaction_event: TransactionEvent):
             total_sum_calls = [0 for _ in range(len(cached_contract_selectors[contract]))]
             user_sum_calls = {}
             user_func_sum_calls = [{} for _ in range(len(cached_contract_selectors[contract]))]
-            # construct train features
+
             for i, record in enumerate(cached_function_calls[contract].values()):
                 train_caller, train_selector_index = record
                 if train_caller not in user_func_sum_calls[train_selector_index]:
@@ -118,6 +119,18 @@ def parse_traces(transaction_event: TransactionEvent):
                     user_sum_calls[train_caller] = 0
                 user_sum_calls[train_caller] += 1
                 total_sum_calls[train_selector_index] += 1
+            for i, (test_caller, test_selector_index) in enumerate(zip(callers, selector_indexes)):
+                if test_caller not in user_func_sum_calls[test_selector_index]:
+                    user_func_sum_calls[test_selector_index][test_caller] = 0
+                user_func_sum_calls[test_selector_index][test_caller] += 1
+                if test_caller not in user_sum_calls:
+                    user_sum_calls[test_caller] = 0
+                user_sum_calls[test_caller] += 1
+                total_sum_calls[test_selector_index] += 1
+
+            # construct train features
+            for i, record in enumerate(cached_function_calls[contract].values()):
+                train_caller, train_selector_index = record
                 # one-hot encoded function selectors
                 train[i, train_selector_index] = 1 + get_noise(config.NOISE_SCALAR)
                 # percentage of calls from caller
@@ -130,15 +143,9 @@ def parse_traces(transaction_event: TransactionEvent):
                                                                              train_caller] / user_sum_calls[
                                                                              train_caller] + get_noise(
                     config.NOISE_SCALAR)
+
             # construct test features
             for i, (test_caller, test_selector_index) in enumerate(zip(callers, selector_indexes)):
-                if test_caller not in user_func_sum_calls[test_selector_index]:
-                    user_func_sum_calls[test_selector_index][test_caller] = 0
-                user_func_sum_calls[test_selector_index][test_caller] += 1
-                if test_caller not in user_sum_calls:
-                    user_sum_calls[test_caller] = 0
-                user_sum_calls[test_caller] += 1
-                total_sum_calls[test_selector_index] += 1
                 test[i, test_selector_index] = 1 + get_noise(config.NOISE_SCALAR)
                 test[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[test_selector_index][
                                                                         test_caller] / \
