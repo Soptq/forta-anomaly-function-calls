@@ -186,7 +186,7 @@ def handle_transaction(transaction_event: TransactionEvent):
             contract_address, selector, anomaly_score, confidence = max_anomaly
             findings.append(Finding({
                 'name': f'Abnormal Function Call Detected',
-                'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}',
+                'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}, anomaly score {anomaly_score}',
                 'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
                 'severity': FindingSeverity.Medium,
                 'type': FindingType.Suspicious,
