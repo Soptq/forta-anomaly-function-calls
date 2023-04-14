@@ -9,7 +9,6 @@ import src.config as config
 
 cached_contract_selectors = {}
 cached_function_calls = {}
-detector = ECOD(contamination=config.NOISE_SCALAR, n_jobs=1)
 warnings.filterwarnings("error")
 
 
@@ -151,6 +150,7 @@ def parse_traces(transaction_event: TransactionEvent):
                     config.NOISE_SCALAR)
 
             # predict
+            detector = ECOD(contamination=config.NOISE_SCALAR, n_jobs=1)
             try:
                 detector.fit(train)
             except:
