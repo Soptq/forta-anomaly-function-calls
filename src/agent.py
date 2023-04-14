@@ -9,9 +9,12 @@ import src.config as config
 
 cached_contract_selectors = {}
 cached_function_calls = {}
-detector = ECOD(contamination=1e-5)
-np.seterr(all="ignore")
-warnings.filterwarnings('ignore')
+detector = ECOD(contamination=1e-5, n_jobs=1)
+warnings.filterwarnings("error")
+
+
+def get_noise(scalar):
+    return np.random.normal(0, scalar, 1)[0]
 
 
 def parse_traces(transaction_event: TransactionEvent):
@@ -90,9 +93,11 @@ def parse_traces(transaction_event: TransactionEvent):
         if contract not in cached_function_calls:
             cached_function_calls[contract] = cachetools.TTLCache(maxsize=2 ** 20, ttl=config.HISTORY_TTL)
 
-        time_to_collect = max(cached_function_calls[contract].keys()) - min(cached_function_calls[contract].keys()) if len(
+        time_to_collect = max(cached_function_calls[contract].keys()) - min(
+            cached_function_calls[contract].keys()) if len(
             cached_function_calls[contract]) > 0 else 0
-        if len(cached_function_calls[contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
+        if len(cached_function_calls[
+                   contract]) >= config.MIN_RECORDS_TO_DETECT or time_to_collect >= config.MIN_TIME_TO_COLLECT_NS:
             print(
                 f"[{len(cached_function_calls[contract])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selectors {selectors}, batch size {len(data)}")
             # construct dataset
@@ -115,15 +120,17 @@ def parse_traces(transaction_event: TransactionEvent):
                 user_sum_calls[train_caller] += 1
                 total_sum_calls[train_selector_index] += 1
                 # one-hot encoded function selectors
-                train[i, train_selector_index] = 1
+                train[i, train_selector_index] = 1 + get_noise(config.NOISE_SCALAR)
                 # percentage of calls from caller
                 train[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[train_selector_index][
                                                                          train_caller] / total_sum_calls[
-                                                                         train_selector_index]
+                                                                         train_selector_index] + get_noise(
+                    config.NOISE_SCALAR)
                 # percentage of calls to this function selector
                 train[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[train_selector_index][
                                                                              train_caller] / user_sum_calls[
-                                                                             train_caller]
+                                                                             train_caller] + get_noise(
+                    config.NOISE_SCALAR)
             # construct test features
             for i, (test_caller, test_selector_index) in enumerate(zip(callers, selector_indexes)):
                 if test_caller not in user_func_sum_calls[test_selector_index]:
@@ -133,16 +140,20 @@ def parse_traces(transaction_event: TransactionEvent):
                     user_sum_calls[test_caller] = 0
                 user_sum_calls[test_caller] += 1
                 total_sum_calls[test_selector_index] += 1
-                test[i, test_selector_index] = 1
-                test[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[test_selector_index][test_caller] / \
-                                                                    total_sum_calls[test_selector_index]
-                test[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[test_selector_index][test_caller] / \
-                                                                        user_sum_calls[test_caller]
+                test[i, test_selector_index] = 1 + get_noise(config.NOISE_SCALAR)
+                test[i, len(cached_contract_selectors[contract])] = user_func_sum_calls[test_selector_index][
+                                                                        test_caller] / \
+                                                                    total_sum_calls[test_selector_index] + get_noise(
+                    config.NOISE_SCALAR)
+                test[i, len(cached_contract_selectors[contract]) + 1] = user_func_sum_calls[test_selector_index][
+                                                                            test_caller] / \
+                                                                        user_sum_calls[test_caller] + get_noise(
+                    config.NOISE_SCALAR)
 
             # predict
             detector.fit(train)
             probs, confidences = detector.predict_proba(test, return_confidence=True)
-            print(f"Anomaly score for {contract} with selector {selector}: {probs}:{confidences}")
+            print(f"Anomaly score for {contract} with selector {selectors}: {probs}:{confidences}")
             for prob, confidence in zip(probs, confidences):
                 findings.append((contract, selector, prob[1], confidence))
         else:
