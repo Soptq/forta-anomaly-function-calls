@@ -24,10 +24,8 @@ def parse_traces(transaction_event: TransactionEvent):
     if len(transaction_event.traces) > 0:
         # get all traces with `call` type
         for trace in transaction_event.traces:
-            print(trace.error, type(trace.error), trace.error)
-            if trace.error is not None or trace.error != "":
+            if trace.error is not None and trace.error != "":
                 continue
-            print("error passed")
             # deal with suicided contract
             if trace.type.lower() == 'suicide':
                 suicided_contract = trace.action.address
@@ -36,7 +34,6 @@ def parse_traces(transaction_event: TransactionEvent):
                 if suicided_contract in cached_function_calls:
                     del cached_function_calls[suicided_contract]
                 continue
-            print("suicide passed")
 
             if trace.type.lower() != 'call':
                 continue
@@ -75,8 +72,6 @@ def parse_traces(transaction_event: TransactionEvent):
         if contract not in function_calls:
             function_calls[contract] = []
         function_calls[contract].append((caller, _input))
-
-    print(function_calls)
 
     for contract, data in function_calls.items():
         callers, _inputs = [], []
