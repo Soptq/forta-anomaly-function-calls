@@ -24,6 +24,7 @@ def parse_traces(transaction_event: TransactionEvent):
     if len(transaction_event.traces) > 0:
         # get all traces with `call` type
         for trace in transaction_event.traces:
+            print(trace.error, trace.type, trace.action.call_type)
             if trace.error is not None:
                 continue
             # deal with suicided contract
