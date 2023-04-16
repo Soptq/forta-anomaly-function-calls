@@ -74,6 +74,8 @@ def parse_traces(transaction_event: TransactionEvent):
             function_calls[contract] = []
         function_calls[contract].append((caller, _input))
 
+    print(function_calls)
+
     for contract, data in function_calls.items():
         callers, _inputs = [], []
         for datum in data:
