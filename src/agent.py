@@ -24,10 +24,8 @@ def parse_traces(transaction_event: TransactionEvent):
     if len(transaction_event.traces) > 0:
         # get all traces with `call` type
         for trace in transaction_event.traces:
-            print(trace.error, trace.type, trace.action.input)
-            if trace.error is not None:
+            if trace.error is not None or trace.error == "":
                 continue
-            print("error passed")
             # deal with suicided contract
             if trace.type.lower() == 'suicide':
                 suicided_contract = trace.action.address
@@ -36,15 +34,12 @@ def parse_traces(transaction_event: TransactionEvent):
                 if suicided_contract in cached_function_calls:
                     del cached_function_calls[suicided_contract]
                 continue
-            print("suicide passed")
 
             if trace.type.lower() != 'call':
                 continue
             if trace.action.input.lower() == '0x':
                 # regular transfer, not a contract call
                 continue
-
-            print("2wadawd", trace.action.call_type.lower())
 
             if trace.action.call_type.lower() == 'call':
                 caller = trace.action.from_
