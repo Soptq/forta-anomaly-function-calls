@@ -1,4 +1,4 @@
-HISTORY_TTL = 60 * 60 * 24 * 7  # 7 days
+HISTORY_TTL = 60 * 60 * 24 * 30  # 30 days
 MIN_RECORDS_TO_DETECT = 2 ** 12  # there must be at least 4096 function call records to detect a possible anomaly.
 MIN_TIME_TO_COLLECT_NS = 60 * 60 * 10 ** 9  # 60 minutes
 MIN_RECORDS_TO_DETECT_FOR_MIN_TIME = 2 ** 5

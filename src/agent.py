@@ -5,7 +5,6 @@ import cachetools
 import time
 from pyod.models.ecod import ECOD
 import numpy as np
-import src.config as config
 
 cached_contract_selectors = {}
 cached_function_calls = {}
@@ -16,7 +15,13 @@ def get_noise(scalar):
     return np.random.normal(0, scalar, 1)[0]
 
 
-def parse_traces(transaction_event: TransactionEvent):
+def reset():
+    global cached_function_calls, cached_contract_selectors
+    cached_contract_selectors = {}
+    cached_function_calls = {}
+
+
+def parse_traces(transaction_event: TransactionEvent, config):
     findings = []
     print(f"Parsing {len(transaction_event.traces)} traces for transaction {transaction_event.transaction.hash}")
 
@@ -176,10 +181,10 @@ def parse_traces(transaction_event: TransactionEvent):
     return findings
 
 
-def handle_transaction(transaction_event: TransactionEvent):
+def provide_handle_transaction(transaction_event: TransactionEvent, config):
     try:
         findings = []
-        anomaly_detections = parse_traces(transaction_event)
+        anomaly_detections = parse_traces(transaction_event, config)
 
         caller = transaction_event.transaction.from_
 
@@ -201,7 +206,7 @@ def handle_transaction(transaction_event: TransactionEvent):
                     'contract_address': contract_address,
                     'caller': caller,
                     'function_selector': selector,
-                    'anomaly_score': anomaly_score,
+                    'anomaly_score': 1.0 - anomaly_score,  # 0 is the most abnormal
                     'confidence': confidence,
                 },
                 "labels": [
@@ -224,6 +229,11 @@ def handle_transaction(transaction_event: TransactionEvent):
     except Exception as e:
         print(e)
         return []
+
+
+def handle_transaction(transaction_event: TransactionEvent):
+    import src.config as config
+    return provide_handle_transaction(transaction_event, config)
 
 
 # def initialize():

@@ -7,6 +7,8 @@ A Forta Agent that detects anomalous function calls. Currently, the anomaly dete
 1. The function selector of the call.
 2. Attributes of the caller like the frequency of calls and others.
 
+The bot uses [ECOD](https://arxiv.org/abs/2201.00382) to detect anomalies. To increase the performance of the bot, function calls are batched to be processed.
+
 ## Supported Chains
 
 - All chains that Forta supports.
