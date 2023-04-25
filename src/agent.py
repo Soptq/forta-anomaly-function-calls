@@ -272,8 +272,7 @@ def parse_logs(transaction_event: TransactionEvent, config):
 def provide_handle_transaction(transaction_event: TransactionEvent, config):
     findings = []
     anomaly_detections_traces = parse_traces(transaction_event, config)
-    # anomaly_detections_logs = parse_logs(transaction_event, config)
-    anomaly_detections_logs = []
+    anomaly_detections_logs = parse_logs(transaction_event, config)
     caller = transaction_event.transaction.from_
 
     max_anomaly = (None, None, 0., None)
@@ -363,7 +362,7 @@ def initialize():
 
 
 def provide_handle_block(block_event: BlockEvent, config):
-    if block_event.block.number % config.MAINTAIN_INTERVAL_BLK == 0:
+    if block_event.block.number % config.MAINTAIN_INTERVAL_BLK[int(block_event.network)] == 0:
         n_clean = 0
         will_train_contract_traces, will_train_contract_logs = [], []
         for contract, data in cached_function_calls_traces.items():

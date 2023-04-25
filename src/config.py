@@ -5,4 +5,12 @@ MIN_RECORDS_TO_DETECT_FOR_MIN_TIME = 2 ** 6
 ANOMALY_THRESHOLD = 0.9  # the threshold to determine whether a function call is an anomaly.
 NOISE_SCALAR = 1e-10
 COLD_START_TIME = 72 * 60 * 60 * 10 ** 9  # 72 hours
-MAINTAIN_INTERVAL_BLK = 300  # 300 blocks
+MAINTAIN_INTERVAL_BLK = {
+    1: 300,
+    10: 1800,
+    56: 1200,
+    137: 1800,
+    250: 3600,
+    42161: 240,
+    43114: 180,
+}
