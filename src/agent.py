@@ -32,8 +32,6 @@ def reset():
 
 def parse_traces(transaction_event: TransactionEvent, config):
     findings = []
-    print(f"Parsing {len(transaction_event.traces)} traces for transaction {transaction_event.transaction.hash}")
-
     function_calls = {}
     if len(transaction_event.traces) > 0:
         # get all traces with `call` type
@@ -45,8 +43,8 @@ def parse_traces(transaction_event: TransactionEvent, config):
                 suicided_contract = trace.action.address
                 if suicided_contract in cached_contract_selectors_traces:
                     del cached_contract_selectors_traces[suicided_contract]
-                if suicided_contract in cached_function_calls_traces["cache"]:
-                    del cached_function_calls_traces["cache"][suicided_contract]
+                if suicided_contract in cached_function_calls_traces:
+                    del cached_function_calls_traces[suicided_contract]
                 continue
 
             if trace.type.lower() != 'call':
@@ -173,8 +171,6 @@ def parse_traces(transaction_event: TransactionEvent, config):
 
 def parse_logs(transaction_event: TransactionEvent, config):
     findings = []
-    print(f"Parsing {len(transaction_event.logs)} logs for transaction {transaction_event.transaction.hash}")
-
     events_emit = {}
     caller = transaction_event.transaction.from_
     for log in transaction_event.logs:
