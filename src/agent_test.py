@@ -1,5 +1,5 @@
 from unittest.mock import patch
-from forta_agent import create_transaction_event, FindingSeverity, EntityType
+from forta_agent import create_transaction_event, create_block_event, FindingSeverity, EntityType
 import agent
 
 
@@ -8,6 +8,7 @@ class TestAnomalyDetectionAgent:
         agent.reset()
         import config
         config.MIN_RECORDS_TO_DETECT = 8
+        config.MAINTAIN_INTERVAL_BLK = 1
         tx_event = create_transaction_event(
             {
                 "transaction": {
@@ -36,12 +37,16 @@ class TestAnomalyDetectionAgent:
             }
         )
 
+        block_event = create_block_event({"block": {"number": 1}})
+
         for tx_event in [tx_event] * 10:
             findings = agent.provide_handle_transaction(tx_event, config)
             assert (
                     len(findings) == 0
             ), "this should have not triggered a finding"
 
+        agent.provide_handle_block(block_event, config)
+        agent.provide_handle_block(block_event, config)
         findings = agent.provide_handle_transaction(anomaly_tx_event, config)
         assert (
             len(findings) != 0
@@ -51,6 +56,7 @@ class TestAnomalyDetectionAgent:
         agent.reset()
         import config
         config.MIN_RECORDS_TO_DETECT = 16
+        config.MAINTAIN_INTERVAL_BLK = 1
         tx_event_1 = create_transaction_event(
             {
                 "transaction": {
@@ -93,12 +99,17 @@ class TestAnomalyDetectionAgent:
             }
         )
 
+        block_event = create_block_event({"block": {"number": 1}})
+        agent.provide_handle_block(block_event, config)
+
         for tx_event in [tx_event_1, tx_event_2] * 8:
             findings = agent.provide_handle_transaction(tx_event, config)
             print(findings)
             assert (
                     len(findings) == 0
             ), "this should have not triggered a finding"
+
+        agent.provide_handle_block(block_event, config)
 
         findings = agent.provide_handle_transaction(anomaly_tx_event, config)
         assert (
