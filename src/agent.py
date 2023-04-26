@@ -5,6 +5,8 @@ import cachetools
 import time
 from pyod.models.ecod import ECOD
 import numpy as np
+import asyncio
+import threading
 
 start_time = 0
 cached_contract_selectors_traces = {}
@@ -14,6 +16,9 @@ cached_event_selectors_logs = {}
 cached_event_emits_logs = {}
 logs_models = {}
 warnings.filterwarnings("error")
+
+is_training = False
+background_training_task = None
 
 
 def get_noise(scalar):
@@ -30,7 +35,7 @@ def reset():
     logs_models = {}
 
 
-def parse_traces(transaction_event: TransactionEvent, config):
+async def parse_traces(transaction_event: TransactionEvent, config):
     findings = []
     function_calls = {}
     if len(transaction_event.traces) > 0:
@@ -72,7 +77,14 @@ def parse_traces(transaction_event: TransactionEvent, config):
 
             if contract not in function_calls:
                 function_calls[contract] = []
-            function_calls[contract].append((caller, trace.action.input))
+
+            existed = False
+            for _caller, _input in function_calls[contract]:
+                if _caller == caller and _input == trace.action.input:
+                    existed = True
+                    break
+            if not existed:
+                function_calls[contract].append((caller, trace.action.input))
     else:
         # no traces, this is a regular transaction
         if transaction_event.transaction.data.lower() == '0x':
@@ -83,7 +95,14 @@ def parse_traces(transaction_event: TransactionEvent, config):
         _input = transaction_event.transaction.data
         if contract not in function_calls:
             function_calls[contract] = []
-        function_calls[contract].append((caller, _input))
+
+        existed = False
+        for _caller, _input_ in function_calls[contract]:
+            if _caller == caller and _input_ == _input:
+                existed = True
+                break
+        if not existed:
+            function_calls[contract].append((caller, _input))
 
     for contract, data in function_calls.items():
         callers, _inputs = [], []
@@ -113,7 +132,7 @@ def parse_traces(transaction_event: TransactionEvent, config):
         time_to_collect = max(cached_function_calls_traces[contract]["cache"].keys()) - min(
             cached_function_calls_traces[contract]["cache"].keys()) if len(
             cached_function_calls_traces[contract]["cache"]) > 0 else 0
-        if (contract in traces_models) and ((time_bot_started >= config.COLD_START_TIME and len(cached_function_calls_traces[contract]["cache"]) >= config.MIN_RECORDS_TO_DETECT) \
+        if (contract in traces_models and not traces_models[contract]["training"]) and ((time_bot_started >= config.COLD_START_TIME and len(cached_function_calls_traces[contract]["cache"]) >= config.MIN_RECORDS_TO_DETECT) \
                 or (time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(cached_function_calls_traces[contract]["cache"]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
             print(
                 f"[{len(cached_function_calls_traces[contract]['cache'])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selectors {selectors}, batch size {len(data)}")
@@ -149,7 +168,7 @@ def parse_traces(transaction_event: TransactionEvent, config):
                 test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
                 test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
 
-            probs, confidences = traces_models[contract].predict_proba(test_dataset, return_confidence=True)
+            probs, confidences = traces_models[contract]["model"].predict_proba(test_dataset, return_confidence=True)
             print(f"Anomaly score for {contract} with selector {selectors}: {probs}:{confidences}")
             for selector, prob, confidence in zip(selectors, probs, confidences):
                 findings.append((contract, selector, prob[1], confidence))
@@ -169,7 +188,7 @@ def parse_traces(transaction_event: TransactionEvent, config):
     return findings
 
 
-def parse_logs(transaction_event: TransactionEvent, config):
+async def parse_logs(transaction_event: TransactionEvent, config):
     findings = []
     events_emit = {}
     caller = transaction_event.transaction.from_
@@ -182,7 +201,14 @@ def parse_logs(transaction_event: TransactionEvent, config):
 
         if contract not in events_emit:
             events_emit[contract] = []
-        events_emit[contract].append((caller, event_selector))
+
+        existed = False
+        for (_caller, _event_selector) in events_emit[contract]:
+            if _caller == caller and _event_selector == event_selector:
+                existed = True
+                break
+        if not existed:
+            events_emit[contract].append((caller, event_selector))
 
     for contract, data in events_emit.items():
         callers, event_selectors = [], []
@@ -211,7 +237,7 @@ def parse_logs(transaction_event: TransactionEvent, config):
         time_to_collect = max(cached_event_emits_logs[contract]["cache"].keys()) - min(
             cached_event_emits_logs[contract]["cache"].keys()) if len(
             cached_event_emits_logs[contract]["cache"]) > 0 else 0
-        if (contract in logs_models) and ((time_bot_started >= config.COLD_START_TIME and len(cached_event_emits_logs[contract]) >= config.MIN_RECORDS_TO_DETECT) or (
+        if (contract in logs_models and not logs_models[contract]["training"]) and ((time_bot_started >= config.COLD_START_TIME and len(cached_event_emits_logs[contract]) >= config.MIN_RECORDS_TO_DETECT) or (
                 time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(
             cached_event_emits_logs[contract]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
             print(
@@ -248,7 +274,7 @@ def parse_logs(transaction_event: TransactionEvent, config):
                 test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
                 test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
 
-            probs, confidences = logs_models[contract].predict_proba(test_dataset, return_confidence=True)
+            probs, confidences = logs_models[contract]["model"].predict_proba(test_dataset, return_confidence=True)
             print(f"Anomaly score for {contract} with selector {event_selectors}: {probs}:{confidences}")
             for selector, prob, confidence in zip(event_selectors, probs, confidences):
                 findings.append((contract, selector, prob[1], confidence))
@@ -269,12 +295,8 @@ def parse_logs(transaction_event: TransactionEvent, config):
     return findings
 
 
-def provide_handle_transaction(transaction_event: TransactionEvent, config):
+async def detect_traces_alerts(caller, anomaly_detections_traces, config):
     findings = []
-    anomaly_detections_traces = parse_traces(transaction_event, config)
-    anomaly_detections_logs = parse_logs(transaction_event, config)
-    caller = transaction_event.transaction.from_
-
     max_anomaly = (None, None, 0., None)
     for detection in anomaly_detections_traces:
         contract_address, selector, anomaly_score, confidence = detection
@@ -310,7 +332,11 @@ def provide_handle_transaction(transaction_event: TransactionEvent, config):
                 }),
             ]
         }))
+    return findings
 
+
+async def detect_logs_alerts(caller, anomaly_detections_logs, config):
+    findings = []
     max_anomaly = (None, None, 0., None)
     for detection in anomaly_detections_logs:
         contract_address, selector, anomaly_score, confidence = detection
@@ -350,9 +376,32 @@ def provide_handle_transaction(transaction_event: TransactionEvent, config):
     return findings
 
 
+async def provide_handle_transaction(transaction_event: TransactionEvent, config):
+    findings = []
+    [anomaly_detections_traces, anomaly_detections_logs] = await asyncio.gather(
+        parse_traces(transaction_event, config),
+        parse_logs(transaction_event, config)
+    )
+
+    caller = transaction_event.transaction.from_
+    [traces_alerts, logs_alerts] = await asyncio.gather(
+        detect_traces_alerts(caller, anomaly_detections_traces, config),
+        detect_logs_alerts(caller, anomaly_detections_logs, config)
+    )
+
+    findings.extend(traces_alerts)
+    findings.extend(logs_alerts)
+
+    return findings
+
+
+def handle_transaction_sync(transaction_event: TransactionEvent, config):
+    return asyncio.run(provide_handle_transaction(transaction_event, config))
+
+
 def handle_transaction(transaction_event: TransactionEvent):
     import src.config as config
-    return provide_handle_transaction(transaction_event, config)
+    return asyncio.run(provide_handle_transaction(transaction_event, config))
 
 
 def initialize():
@@ -362,82 +411,94 @@ def initialize():
 
 
 def provide_handle_block(block_event: BlockEvent, config):
-    if block_event.block.number % config.MAINTAIN_INTERVAL_BLK[int(block_event.network)] == 0:
-        n_clean = 0
-        will_train_contract_traces, will_train_contract_logs = [], []
-        for contract, data in cached_function_calls_traces.items():
-            if len(data["cache"]) == 0:
-                del cached_contract_selectors_traces[contract]
-                del cached_function_calls_traces[contract]
-                del traces_models[contract]
-                n_clean += 1
-            else:
-                if len(cached_contract_selectors_traces[contract]["train"]) > 0:
-                    will_train_contract_traces.append(contract)
+    global is_training
+    is_training = True
 
-        for contract, data in cached_event_emits_logs.items():
-            if len(data["cache"]) == 0:
-                del cached_event_selectors_logs[contract]
-                del cached_event_emits_logs[contract]
-                del logs_models[contract]
-                n_clean += 1
-            else:
-                if len(cached_event_selectors_logs[contract]["train"]) > 0:
-                    will_train_contract_logs.append(contract)
-        print(f'cleaned {n_clean} contracts from cache')
+    n_clean = 0
+    will_train_contract_traces, will_train_contract_logs = [], []
+    for contract, data in cached_function_calls_traces.items():
+        if len(data["cache"]) == 0:
+            del cached_contract_selectors_traces[contract]
+            del cached_function_calls_traces[contract]
+            del traces_models[contract]
+            n_clean += 1
+        else:
+            if len(cached_contract_selectors_traces[contract]["train"]) > 0:
+                will_train_contract_traces.append(contract)
 
-        for contract in will_train_contract_traces:
-            print(f'training traces model for contract {contract}')
-            cached_contract_selectors_traces[contract]["test"].extend(
-                cached_contract_selectors_traces[contract]["train"])
-            cached_contract_selectors_traces[contract]["train"] = []
+    for contract, data in cached_event_emits_logs.items():
+        if len(data["cache"]) == 0:
+            del cached_event_selectors_logs[contract]
+            del cached_event_emits_logs[contract]
+            del logs_models[contract]
+            n_clean += 1
+        else:
+            if len(cached_event_selectors_logs[contract]["train"]) > 0:
+                will_train_contract_logs.append(contract)
+    print(f'cleaned {n_clean} contracts from cache')
 
-            n_feats = len(cached_contract_selectors_traces[contract]["test"]) + 3
-            train_dataset = np.zeros((len(cached_function_calls_traces[contract]["cache"]), n_feats))
+    for contract in will_train_contract_traces:
+        print(f'training traces model for contract {contract}')
+        traces_models[contract] = {"model": ECOD(contamination=config.NOISE_SCALAR, n_jobs=1), "training": True}
 
-            for i, record in enumerate(cached_function_calls_traces[contract]["cache"].values()):
-                caller, selector = record
-                selector_index = cached_contract_selectors_traces[contract]["test"].index(selector)
-                train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
-                train_dataset[i, n_feats - 2] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
-                train_dataset[i, n_feats - 1] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
+        cached_contract_selectors_traces[contract]["test"].extend(
+            cached_contract_selectors_traces[contract]["train"])
+        cached_contract_selectors_traces[contract]["train"] = []
 
-            try:
-                traces_models[contract] = ECOD(contamination=config.NOISE_SCALAR, n_jobs=1)
-                traces_models[contract].fit(train_dataset)
-            except:
-                del traces_models[contract]
-                continue
+        n_feats = len(cached_contract_selectors_traces[contract]["test"]) + 3
+        train_dataset = np.zeros((len(cached_function_calls_traces[contract]["cache"]), n_feats))
 
-        for contract in will_train_contract_logs:
-            print(f'training logs model for contract {contract}')
-            cached_event_selectors_logs[contract]["test"].extend(
-                cached_event_selectors_logs[contract]["train"])
-            cached_event_selectors_logs[contract]["train"] = []
+        for i, record in enumerate(cached_function_calls_traces[contract]["cache"].values()):
+            caller, selector = record
+            selector_index = cached_contract_selectors_traces[contract]["test"].index(selector)
+            train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 2] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 1] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
 
-            n_feats = len(cached_event_selectors_logs[contract]["test"]) + 3
-            train_dataset = np.zeros((len(cached_event_emits_logs[contract]["cache"]), n_feats))
+        try:
+            traces_models[contract]["model"].fit(train_dataset)
+            traces_models[contract]["training"] = False
+        except:
+            del traces_models[contract]
+            continue
 
-            for i, record in enumerate(cached_event_emits_logs[contract]["cache"].values()):
-                caller, selector = record
-                selector_index = cached_event_selectors_logs[contract]["test"].index(selector)
-                train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
-                train_dataset[i, n_feats - 2] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
-                train_dataset[i, n_feats - 1] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
+    for contract in will_train_contract_logs:
+        print(f'training logs model for contract {contract}')
+        logs_models[contract] = {"model": ECOD(contamination=config.NOISE_SCALAR, n_jobs=1), "training": True}
 
-            try:
-                logs_models[contract] = ECOD(contamination=config.NOISE_SCALAR, n_jobs=1)
-                logs_models[contract].fit(train_dataset)
-            except:
-                del logs_models[contract]
-                continue
+        cached_event_selectors_logs[contract]["test"].extend(
+            cached_event_selectors_logs[contract]["train"])
+        cached_event_selectors_logs[contract]["train"] = []
 
-    return []
+        n_feats = len(cached_event_selectors_logs[contract]["test"]) + 3
+        train_dataset = np.zeros((len(cached_event_emits_logs[contract]["cache"]), n_feats))
+
+        for i, record in enumerate(cached_event_emits_logs[contract]["cache"].values()):
+            caller, selector = record
+            selector_index = cached_event_selectors_logs[contract]["test"].index(selector)
+            train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 2] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 1] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
+
+        try:
+            logs_models[contract]["model"].fit(train_dataset)
+            logs_models[contract]["training"] = False
+        except:
+            del logs_models[contract]
+            continue
+
+    is_training = False
 
 
 def handle_block(block_event: BlockEvent):
+    global is_training, background_training_task
     import src.config as config
-    return provide_handle_block(block_event, config)
+    if is_training:
+        return []
+    if block_event.block.number % config.MAINTAIN_INTERVAL_BLK[int(block_event.network)] == 0:
+        background_training_task = threading.Thread(target=provide_handle_block, args=(block_event, config))
+        background_training_task.start()
+    return []
 
 # def handle_alert(alert_event):
 #     findings = []
