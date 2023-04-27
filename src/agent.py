@@ -8,6 +8,8 @@ import numpy as np
 import asyncio
 import threading
 
+from joblib import cpu_count
+
 start_time = 0
 cached_contract_selectors_traces = {}
 cached_function_calls_traces = {}
@@ -439,7 +441,7 @@ def provide_handle_block(block_event: BlockEvent, config):
 
     for contract in will_train_contract_traces:
         print(f'training traces model for contract {contract}')
-        traces_models[contract] = {"model": ECOD(contamination=config.NOISE_SCALAR, n_jobs=1), "training": True}
+        traces_models[contract] = {"model": None, "training": True}
 
         cached_contract_selectors_traces[contract]["test"].extend(
             cached_contract_selectors_traces[contract]["train"])
@@ -455,6 +457,7 @@ def provide_handle_block(block_event: BlockEvent, config):
             train_dataset[i, n_feats - 2] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
             train_dataset[i, n_feats - 1] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
 
+        traces_models[contract]["model"] = ECOD(contamination=config.NOISE_SCALAR, n_jobs=min(cpu_count(), train_dataset.shape[1]))
         try:
             traces_models[contract]["model"].fit(train_dataset)
             traces_models[contract]["training"] = False
@@ -464,7 +467,7 @@ def provide_handle_block(block_event: BlockEvent, config):
 
     for contract in will_train_contract_logs:
         print(f'training logs model for contract {contract}')
-        logs_models[contract] = {"model": ECOD(contamination=config.NOISE_SCALAR, n_jobs=1), "training": True}
+        logs_models[contract] = {"model": None, "training": True}
 
         cached_event_selectors_logs[contract]["test"].extend(
             cached_event_selectors_logs[contract]["train"])
@@ -480,6 +483,8 @@ def provide_handle_block(block_event: BlockEvent, config):
             train_dataset[i, n_feats - 2] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
             train_dataset[i, n_feats - 1] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
 
+        logs_models[contract]["model"] = ECOD(contamination=config.NOISE_SCALAR,
+                                                n_jobs=min(cpu_count(), train_dataset.shape[1]))
         try:
             logs_models[contract]["model"].fit(train_dataset)
             logs_models[contract]["training"] = False

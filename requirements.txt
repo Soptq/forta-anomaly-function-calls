@@ -2,4 +2,4 @@ forta_agent>=0.1.15
 setuptools
 scikit-learn
 cachetools
-pyod
+pyod @ git+https://github.com/Soptq/pyod@b24812891b9aee3ea4fca251f4a69bf7b9c2fbc1
