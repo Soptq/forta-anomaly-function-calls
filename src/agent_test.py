@@ -11,6 +11,7 @@ class TestAnomalyDetectionAgent:
         config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME = 8
         config.MIN_TIME_TO_COLLECT_NS = -1
         config.MAINTAIN_INTERVAL_BLK = 1
+        config.CONFIDENCE_THRESHOLD = -1
         tx_event = create_transaction_event(
             {
                 "transaction": {
@@ -61,6 +62,7 @@ class TestAnomalyDetectionAgent:
         config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME = 16
         config.MIN_TIME_TO_COLLECT_NS = -1
         config.MAINTAIN_INTERVAL_BLK = 1
+        config.CONFIDENCE_THRESHOLD = -1
         tx_event_1 = create_transaction_event(
             {
                 "transaction": {

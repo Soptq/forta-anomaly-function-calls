@@ -1,15 +1,15 @@
-# Forta Anomaly Function Calls Agent
+# Forta Anomaly Detection Agent
 
 ## Description
 
-A Forta Agent that detects anomalous function calls. Currently, the anomaly detection involves the following observations:
+A Forta Agent that detects anomalous function calls and events. Currently, the anomaly detection involves the following observations:
 
-1. The function selector of the call.
+1. The function selector of the call (event).
 2. Attributes of the caller like the frequency of calls and others.
 
 The bot uses [ECOD](https://arxiv.org/abs/2201.00382) to detect anomalies. To increase the performance of the bot, function calls are batched to be processed.
 
-To surpress alert during early stages of the bot, a warmup period of 72 hours is used. During this period, the bot will not fire any alerts.
+To surpress alert during early stages of the bot, a warmup period of 72 hours is used. During this period, the bot will not fire any alerts unless there are many collected records.
 
 ## Supported Chains
 

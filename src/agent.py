@@ -300,13 +300,13 @@ async def detect_traces_alerts(caller, anomaly_detections_traces, config):
     max_anomaly = (None, None, 0., None)
     for detection in anomaly_detections_traces:
         contract_address, selector, anomaly_score, confidence = detection
-        if anomaly_score > max_anomaly[2]:
+        if anomaly_score > config.ANOMALY_THRESHOLD and confidence > config.CONFIDENCE_THRESHOLD:
             max_anomaly = (contract_address, selector, anomaly_score, confidence)
-    if max_anomaly[2] > config.ANOMALY_THRESHOLD:
+    if max_anomaly[2] > config.ANOMALY_THRESHOLD and max_anomaly[3] > config.CONFIDENCE_THRESHOLD:
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
             'name': f'Abnormal Function Call Detected',
-            'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}, anomaly score {anomaly_score}',
+            'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}, anomaly score {1.0 - anomaly_score}',
             'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
             'severity': FindingSeverity.Medium,
             'type': FindingType.Suspicious,
@@ -340,13 +340,13 @@ async def detect_logs_alerts(caller, anomaly_detections_logs, config):
     max_anomaly = (None, None, 0., None)
     for detection in anomaly_detections_logs:
         contract_address, selector, anomaly_score, confidence = detection
-        if anomaly_score > max_anomaly[2]:
+        if anomaly_score > config.ANOMALY_THRESHOLD and confidence > config.CONFIDENCE_THRESHOLD:
             max_anomaly = (contract_address, selector, anomaly_score, confidence)
-    if max_anomaly[2] > config.ANOMALY_THRESHOLD:
+    if max_anomaly[2] > config.ANOMALY_THRESHOLD and max_anomaly[3] > config.CONFIDENCE_THRESHOLD:
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
             'name': f'Abnormal Emitted Event Detected',
-            'description': f'Abnormal emitted event detected from {caller} to {contract_address} with topic {selector}, anomaly score {anomaly_score}',
+            'description': f'Abnormal emitted event detected from {caller} to {contract_address} with topic {selector}, anomaly score {1.0 - anomaly_score}',
             'alert_id': 'ABNORMAL-EMITTED-EVENT-DETECTED-1',
             'severity': FindingSeverity.Medium,
             'type': FindingType.Suspicious,
