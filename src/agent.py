@@ -303,7 +303,8 @@ async def detect_traces_alerts(caller, anomaly_detections_traces, config):
     for detection in anomaly_detections_traces:
         contract_address, selector, anomaly_score, confidence = detection
         if anomaly_score > config.ANOMALY_THRESHOLD and confidence > config.CONFIDENCE_THRESHOLD:
-            max_anomaly = (contract_address, selector, anomaly_score, confidence)
+            if anomaly_score > max_anomaly[2]:
+                max_anomaly = (contract_address, selector, anomaly_score, confidence)
     if max_anomaly[2] > config.ANOMALY_THRESHOLD and max_anomaly[3] > config.CONFIDENCE_THRESHOLD:
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
@@ -343,7 +344,8 @@ async def detect_logs_alerts(caller, anomaly_detections_logs, config):
     for detection in anomaly_detections_logs:
         contract_address, selector, anomaly_score, confidence = detection
         if anomaly_score > config.ANOMALY_THRESHOLD and confidence > config.CONFIDENCE_THRESHOLD:
-            max_anomaly = (contract_address, selector, anomaly_score, confidence)
+            if anomaly_score > max_anomaly[2]:
+                max_anomaly = (contract_address, selector, anomaly_score, confidence)
     if max_anomaly[2] > config.ANOMALY_THRESHOLD and max_anomaly[3] > config.CONFIDENCE_THRESHOLD:
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
