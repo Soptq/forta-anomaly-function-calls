@@ -4,7 +4,7 @@
 
 A Forta Agent that detects anomalous function calls and events. Currently, the anomaly detection involves the following observations:
 
-1. The function selector of the call (event).
+1. The function/event selector of the call (event).
 2. Attributes of the caller like the frequency of calls and others.
 
 The bot uses [ECOD](https://arxiv.org/abs/2201.00382) to detect anomalies. To increase the performance of the bot, function calls are batched to be processed.
@@ -25,7 +25,7 @@ To surpress alert during early stages of the bot, a warmup period of 72 hours is
     - `contract_address`: The address of the contract that was called.
     - `caller`: The address of the caller.
     - `function_selector`: The function signature of the call.
-    - `anomaly_score`: The anomaly score of the call.
+    - `anomaly_score`: The anomaly score of the call. The minimal anomaly score can be set in config.js
     - `confidence`: How consistently the model would make the same prediction if the training set was perturbed.
 - ABNORMAL-EMITTED-EVENT-DETECTED-1
   - Fired when a emitted event is suspicious using anomaly detection.
@@ -35,7 +35,7 @@ To surpress alert during early stages of the bot, a warmup period of 72 hours is
     - `contract_address`: The address of the contract that was called.
     - `caller`: The address of the caller.
     - `event_topic`: The topic of the event.
-    - `anomaly_score`: The anomaly score of the call.
+    - `anomaly_score`: The anomaly score of the call. The minimal anomaly score can be set in config.js
     - `confidence`: How consistently the model would make the same prediction if the training set was perturbed.
 
 # Config
