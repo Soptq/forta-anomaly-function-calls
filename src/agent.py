@@ -1,5 +1,6 @@
 from forta_agent import Finding, FindingType, FindingSeverity, TransactionEvent, BlockEvent, Label, EntityType
 
+import math
 import warnings
 import cachetools
 import time
@@ -7,8 +8,14 @@ from pyod.models.ecod import ECOD
 import numpy as np
 import asyncio
 import threading
+from itertools import product
 
 from joblib import cpu_count
+
+SHARDING_BOT_ID = 0
+SHARDING_CLUSTER_SIZE = 1
+SHARDING_BASE = None
+SHARDING_FILTER_PREFIX = None
 
 start_time = 0
 cached_contract_selectors_traces = {}
@@ -25,6 +32,15 @@ background_training_task = None
 
 def get_noise(scalar):
     return np.random.normal(0, scalar, 1)[0]
+
+
+def assigned_to_me(contract_address):
+    global SHARDING_FILTER_PREFIX, SHARDING_BASE, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE
+    if SHARDING_FILTER_PREFIX is None or SHARDING_BASE is None:
+        return True
+    if contract_address.lower()[2: 2 + SHARDING_BASE] in SHARDING_FILTER_PREFIX:
+        return True
+    return False
 
 
 def reset():
@@ -85,7 +101,7 @@ async def parse_traces(transaction_event: TransactionEvent, config):
                 if _caller == caller and _input == trace.action.input:
                     existed = True
                     break
-            if not existed:
+            if not existed and assigned_to_me(contract):
                 function_calls[contract].append((caller, trace.action.input))
     else:
         # no traces, this is a regular transaction
@@ -103,7 +119,7 @@ async def parse_traces(transaction_event: TransactionEvent, config):
             if _caller == caller and _input_ == _input:
                 existed = True
                 break
-        if not existed:
+        if not existed and assigned_to_me(contract):
             function_calls[contract].append((caller, _input))
 
     for contract, data in function_calls.items():
@@ -176,7 +192,7 @@ async def parse_traces(transaction_event: TransactionEvent, config):
                 findings.append((contract, selector, prob[1], confidence))
         else:
             print(
-                f"[{len(cached_function_calls_traces[contract]['cache'])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with selector {selector}, batch size {len(data)}")
+                f"[{len(cached_function_calls_traces[contract]['cache'])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with selectors {selectors}, batch size {len(data)}")
 
         for i, (caller, selector) in enumerate(zip(callers, selectors)):
             cached_function_calls_traces[contract]["cache"][time.time_ns()] = (caller, selector)
@@ -209,7 +225,7 @@ async def parse_logs(transaction_event: TransactionEvent, config):
             if _caller == caller and _event_selector == event_selector:
                 existed = True
                 break
-        if not existed:
+        if not existed and assigned_to_me(contract):
             events_emit[contract].append((caller, event_selector))
 
     for contract, data in events_emit.items():
@@ -282,7 +298,7 @@ async def parse_logs(transaction_event: TransactionEvent, config):
                 findings.append((contract, selector, prob[1], confidence))
         else:
             print(
-                f"[{len(cached_event_emits_logs[contract]['cache'])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with event selector {event_selectors}, batch size {len(data)}")
+                f"[{len(cached_event_emits_logs[contract]['cache'])}][{time_to_collect // 10 ** 9}] Not enough records for contract {contract} with event selectors {event_selectors}, batch size {len(data)}")
 
         for i, (caller, selector) in enumerate(zip(callers, event_selectors)):
             cached_event_emits_logs[contract]["cache"][time.time_ns()] = (caller, selector)
@@ -309,7 +325,7 @@ async def detect_traces_alerts(caller, anomaly_detections_traces, config):
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
             'name': f'Abnormal Function Call Detected',
-            'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}, anomaly score {1.0 - anomaly_score}',
+            'description': f'Abnormal function call detected from {caller} to {contract_address} with selector {selector}, anomaly score {max(config.LOWEST_ANOMALY_SCORE, 1.0 - anomaly_score)}',
             'alert_id': 'ABNORMAL-FUNCTION-CALL-DETECTED-1',
             'severity': FindingSeverity.Medium,
             'type': FindingType.Suspicious,
@@ -317,7 +333,7 @@ async def detect_traces_alerts(caller, anomaly_detections_traces, config):
                 'contract_address': contract_address,
                 'caller': caller,
                 'function_selector': selector,
-                'anomaly_score': 1.0 - anomaly_score,  # 0 is the most abnormal
+                'anomaly_score': max(config.LOWEST_ANOMALY_SCORE, 1.0 - anomaly_score),  # 0 is the most abnormal
                 'confidence': confidence,
             },
             "labels": [
@@ -350,7 +366,7 @@ async def detect_logs_alerts(caller, anomaly_detections_logs, config):
         contract_address, selector, anomaly_score, confidence = max_anomaly
         findings.append(Finding({
             'name': f'Abnormal Emitted Event Detected',
-            'description': f'Abnormal emitted event detected from {caller} to {contract_address} with topic {selector}, anomaly score {1.0 - anomaly_score}',
+            'description': f'Abnormal emitted event detected from {caller} to {contract_address} with topic {selector}, anomaly score {max(config.LOWEST_ANOMALY_SCORE, 1.0 - anomaly_score)}',
             'alert_id': 'ABNORMAL-EMITTED-EVENT-DETECTED-1',
             'severity': FindingSeverity.Medium,
             'type': FindingType.Suspicious,
@@ -358,7 +374,7 @@ async def detect_logs_alerts(caller, anomaly_detections_logs, config):
                 'contract_address': contract_address,
                 'caller': caller,
                 'event_topic': selector,
-                'anomaly_score': 1.0 - anomaly_score,  # 0 is the most abnormal
+                'anomaly_score': max(config.LOWEST_ANOMALY_SCORE, 1.0 - anomaly_score),  # 0 is the most abnormal
                 'confidence': confidence,
             },
             "labels": [
@@ -410,8 +426,14 @@ def handle_transaction(transaction_event: TransactionEvent):
 
 def initialize():
     # do some initialization on startup e.g. fetch data
-    global start_time
+    global start_time, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE, SHARDING_BASE, SHARDING_FILTER_PREFIX
     start_time = time.time_ns()
+
+    # sharding
+    SHARDING_BASE = math.ceil(math.log2(SHARDING_CLUSTER_SIZE) / 4) if SHARDING_CLUSTER_SIZE > 1 else 1
+    open_set = list(map(''.join, product('0123456789abcdef', repeat=SHARDING_BASE)))
+    cluster_set = np.array_split(open_set, SHARDING_CLUSTER_SIZE)
+    SHARDING_FILTER_PREFIX = cluster_set[SHARDING_BOT_ID]
 
 
 def provide_handle_block(block_event: BlockEvent, config):
