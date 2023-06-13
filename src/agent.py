@@ -11,7 +11,7 @@ import threading
 from itertools import product
 
 from joblib import cpu_count
-from sharding import get_sharding_stats
+from src.sharding import get_sharding_stats
 
 SHARDING_BOT_ID = -1
 SHARDING_CLUSTER_SIZE = -1
