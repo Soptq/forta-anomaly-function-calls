@@ -1,11 +1,17 @@
 {
   "name": "forta-anomaly-function-calls",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "A Forta Agent that detects anomalous function calls using anomaly detection",
   "repository": "https://github.com/forta-network/forta-bot-sdk/tree/master/starter-project",
   "chainIds": [
     1, 10, 56, 137, 250, 42161, 43114
   ],
+  "chainSettings": {
+    "default": {
+        "shards": 1,
+        "target": 16
+    }
+  },
   "scripts": {
     "start": "npm run start:dev",
     "start:dev": "nodemon --watch src --watch forta.config.json -e py --exec \"forta-agent run\"",
