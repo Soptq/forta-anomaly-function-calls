@@ -26,6 +26,7 @@ cached_event_selectors_logs = {}
 cached_event_emits_logs = {}
 logs_models = {}
 warnings.filterwarnings("error")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 is_training = False
 background_training_task = None

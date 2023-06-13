@@ -23,7 +23,6 @@ def int_to_address(i):
 def get_bot_info():
     token = fetch_jwt({})
     payload = json.loads(decode_jwt(token).payload)
-    print(payload)
     bot_id = payload['bot-id']
     scanner = payload["sub"].lower()
 
@@ -63,4 +62,4 @@ def get_sharding_stats(chain_id):
 
 
 if __name__ == '__main__':
-    get_scanners()
+    print(get_sharding_stats(1))
