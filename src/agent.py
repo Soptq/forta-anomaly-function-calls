@@ -11,9 +11,10 @@ import threading
 from itertools import product
 
 from joblib import cpu_count
+from sharding import get_sharding_stats
 
-SHARDING_BOT_ID = 0
-SHARDING_CLUSTER_SIZE = 1
+SHARDING_BOT_ID = -1
+SHARDING_CLUSTER_SIZE = -1
 SHARDING_BASE = None
 SHARDING_FILTER_PREFIX = None
 
@@ -141,7 +142,8 @@ async def parse_traces(transaction_event: TransactionEvent, config):
         if contract not in cached_contract_selectors_traces:
             cached_contract_selectors_traces[contract] = {"train": [], "test": []}
         for selector in selectors:
-            if selector not in cached_contract_selectors_traces[contract]["test"] and selector not in cached_contract_selectors_traces[contract]["train"]:
+            if selector not in cached_contract_selectors_traces[contract]["test"] and selector not in \
+                    cached_contract_selectors_traces[contract]["train"]:
                 cached_contract_selectors_traces[contract]["train"].append(selector)
                 cached_function_calls_traces[contract]["user_func_sum_calls"][selector] = {}
                 cached_function_calls_traces[contract]["total_sum_calls"][selector] = 0
@@ -150,8 +152,16 @@ async def parse_traces(transaction_event: TransactionEvent, config):
         time_to_collect = max(cached_function_calls_traces[contract]["cache"].keys()) - min(
             cached_function_calls_traces[contract]["cache"].keys()) if len(
             cached_function_calls_traces[contract]["cache"]) > 0 else 0
-        if (contract in traces_models and not traces_models[contract]["training"]) and ((time_bot_started >= config.COLD_START_TIME and len(cached_function_calls_traces[contract]["cache"]) >= config.MIN_RECORDS_TO_DETECT) \
-                or (time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(cached_function_calls_traces[contract]["cache"]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
+        if (contract in traces_models and not traces_models[contract]["training"]) and ((
+                                                                                                time_bot_started >= config.COLD_START_TIME and len(
+                                                                                                cached_function_calls_traces[
+                                                                                                    contract][
+                                                                                                    "cache"]) >= config.MIN_RECORDS_TO_DETECT) \
+                                                                                        or (
+                                                                                                time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(
+                                                                                            cached_function_calls_traces[
+                                                                                                contract][
+                                                                                                "cache"]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
             print(
                 f"[{len(cached_function_calls_traces[contract]['cache'])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with selectors {selectors}, batch size {len(data)}")
             n_feats = len(cached_contract_selectors_traces[contract]["test"]) + 3
@@ -167,7 +177,8 @@ async def parse_traces(transaction_event: TransactionEvent, config):
 
                 if test_selector in cached_function_calls_traces[contract]["user_func_sum_calls"]:
                     if test_caller in cached_function_calls_traces[contract]["user_func_sum_calls"][test_selector]:
-                        user_func_sum_calls = cached_function_calls_traces[contract]["user_func_sum_calls"][test_selector][test_caller]
+                        user_func_sum_calls = \
+                        cached_function_calls_traces[contract]["user_func_sum_calls"][test_selector][test_caller]
                     else:
                         user_func_sum_calls = 0
                 else:
@@ -183,8 +194,10 @@ async def parse_traces(transaction_event: TransactionEvent, config):
                 else:
                     user_sum_calls = 0
 
-                test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
-                test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
+                test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(
+                    config.NOISE_SCALAR)
+                test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(
+                    config.NOISE_SCALAR)
 
             probs, confidences = traces_models[contract]["model"].predict_proba(test_dataset, return_confidence=True)
             print(f"Anomaly score for {contract} with selector {selectors}: {probs}:{confidences}")
@@ -246,7 +259,8 @@ async def parse_logs(transaction_event: TransactionEvent, config):
         if contract not in cached_event_selectors_logs:
             cached_event_selectors_logs[contract] = {"train": [], "test": []}
         for selector in event_selectors:
-            if selector not in cached_event_selectors_logs[contract]["test"] and selector not in cached_event_selectors_logs[contract]["train"]:
+            if selector not in cached_event_selectors_logs[contract]["test"] and selector not in \
+                    cached_event_selectors_logs[contract]["train"]:
                 cached_event_selectors_logs[contract]["train"].append(selector)
                 cached_event_emits_logs[contract]["user_func_sum_calls"][selector] = {}
                 cached_event_emits_logs[contract]["total_sum_calls"][selector] = 0
@@ -255,9 +269,13 @@ async def parse_logs(transaction_event: TransactionEvent, config):
         time_to_collect = max(cached_event_emits_logs[contract]["cache"].keys()) - min(
             cached_event_emits_logs[contract]["cache"].keys()) if len(
             cached_event_emits_logs[contract]["cache"]) > 0 else 0
-        if (contract in logs_models and not logs_models[contract]["training"]) and ((time_bot_started >= config.COLD_START_TIME and len(cached_event_emits_logs[contract]) >= config.MIN_RECORDS_TO_DETECT) or (
-                time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(
-            cached_event_emits_logs[contract]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
+        if (contract in logs_models and not logs_models[contract]["training"]) and ((
+                                                                                            time_bot_started >= config.COLD_START_TIME and len(
+                                                                                            cached_event_emits_logs[
+                                                                                                contract]) >= config.MIN_RECORDS_TO_DETECT) or (
+                                                                                            time_to_collect >= config.MIN_TIME_TO_COLLECT_NS and len(
+                                                                                        cached_event_emits_logs[
+                                                                                            contract]) >= config.MIN_RECORDS_TO_DETECT_FOR_MIN_TIME)):
             print(
                 f"[{len(cached_event_emits_logs[contract]['cache'])}][{time_to_collect // 10 ** 9}] Detecting anomaly for contract {contract} with event selectors {event_selectors}, batch size {len(data)}")
             n_feats = len(cached_event_selectors_logs[contract]["test"]) + 3
@@ -273,7 +291,8 @@ async def parse_logs(transaction_event: TransactionEvent, config):
 
                 if test_selector in cached_event_emits_logs[contract]["user_func_sum_calls"]:
                     if test_caller in cached_event_emits_logs[contract]["user_func_sum_calls"][test_selector]:
-                        user_func_sum_calls = cached_event_emits_logs[contract]["user_func_sum_calls"][test_selector][test_caller]
+                        user_func_sum_calls = cached_event_emits_logs[contract]["user_func_sum_calls"][test_selector][
+                            test_caller]
                     else:
                         user_func_sum_calls = 0
                 else:
@@ -289,8 +308,10 @@ async def parse_logs(transaction_event: TransactionEvent, config):
                 else:
                     user_sum_calls = 0
 
-                test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
-                test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(config.NOISE_SCALAR)
+                test_dataset[i, n_feats - 2] = (user_func_sum_calls + 1) / (total_sum_calls + 1) + get_noise(
+                    config.NOISE_SCALAR)
+                test_dataset[i, n_feats - 1] = (user_func_sum_calls + 1) / (user_sum_calls + 1) + get_noise(
+                    config.NOISE_SCALAR)
 
             probs, confidences = logs_models[contract]["model"].predict_proba(test_dataset, return_confidence=True)
             print(f"Anomaly score for {contract} with selector {event_selectors}: {probs}:{confidences}")
@@ -424,21 +445,31 @@ def handle_transaction(transaction_event: TransactionEvent):
     return asyncio.run(provide_handle_transaction(transaction_event, config))
 
 
-def initialize():
-    # do some initialization on startup e.g. fetch data
-    global start_time, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE, SHARDING_BASE, SHARDING_FILTER_PREFIX
-    start_time = time.time_ns()
+def update_sharding_stats(block_event: BlockEvent):
+    global SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE, SHARDING_BASE, SHARDING_FILTER_PREFIX
+    try:
+        SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE = get_sharding_stats(int(block_event.network))
+    except:
+        SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE = 0, 1
+    print(f'sharding stats: {SHARDING_BOT_ID}, {SHARDING_CLUSTER_SIZE}')
 
-    # sharding
     SHARDING_BASE = math.ceil(math.log2(SHARDING_CLUSTER_SIZE) / 4) if SHARDING_CLUSTER_SIZE > 1 else 1
     open_set = list(map(''.join, product('0123456789abcdef', repeat=SHARDING_BASE)))
     cluster_set = np.array_split(open_set, SHARDING_CLUSTER_SIZE)
     SHARDING_FILTER_PREFIX = cluster_set[SHARDING_BOT_ID]
 
 
+def initialize():
+    # do some initialization on startup e.g. fetch data
+    global start_time, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE, SHARDING_BASE, SHARDING_FILTER_PREFIX
+    start_time = time.time_ns()
+
+
 def provide_handle_block(block_event: BlockEvent, config):
-    global is_training
+    global is_training, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE
     is_training = True
+
+    update_sharding_stats(block_event)
 
     n_clean = 0
     will_train_contract_traces, will_train_contract_logs = [], []
@@ -478,10 +509,15 @@ def provide_handle_block(block_event: BlockEvent, config):
             caller, selector = record
             selector_index = cached_contract_selectors_traces[contract]["test"].index(selector)
             train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
-            train_dataset[i, n_feats - 2] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
-            train_dataset[i, n_feats - 1] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][caller] / cached_function_calls_traces[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 2] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][
+                                                caller] / cached_function_calls_traces[contract]["total_sum_calls"][
+                                                selector] + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 1] = cached_function_calls_traces[contract]["user_func_sum_calls"][selector][
+                                                caller] / cached_function_calls_traces[contract]["user_sum_calls"][
+                                                caller] + get_noise(config.NOISE_SCALAR)
 
-        traces_models[contract]["model"] = ECOD(contamination=config.NOISE_SCALAR, n_jobs=min(cpu_count(), train_dataset.shape[1]))
+        traces_models[contract]["model"] = ECOD(contamination=config.NOISE_SCALAR,
+                                                n_jobs=min(cpu_count(), train_dataset.shape[1]))
         try:
             traces_models[contract]["model"].fit(train_dataset)
             traces_models[contract]["training"] = False
@@ -504,11 +540,15 @@ def provide_handle_block(block_event: BlockEvent, config):
             caller, selector = record
             selector_index = cached_event_selectors_logs[contract]["test"].index(selector)
             train_dataset[i, selector_index] = 1 + get_noise(config.NOISE_SCALAR)
-            train_dataset[i, n_feats - 2] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["total_sum_calls"][selector] + get_noise(config.NOISE_SCALAR)
-            train_dataset[i, n_feats - 1] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / cached_event_emits_logs[contract]["user_sum_calls"][caller] + get_noise(config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 2] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / \
+                                            cached_event_emits_logs[contract]["total_sum_calls"][selector] + get_noise(
+                config.NOISE_SCALAR)
+            train_dataset[i, n_feats - 1] = cached_event_emits_logs[contract]["user_func_sum_calls"][selector][caller] / \
+                                            cached_event_emits_logs[contract]["user_sum_calls"][caller] + get_noise(
+                config.NOISE_SCALAR)
 
         logs_models[contract]["model"] = ECOD(contamination=config.NOISE_SCALAR,
-                                                n_jobs=min(cpu_count(), train_dataset.shape[1]))
+                                              n_jobs=min(cpu_count(), train_dataset.shape[1]))
         try:
             logs_models[contract]["model"].fit(train_dataset)
             logs_models[contract]["training"] = False
@@ -520,8 +560,12 @@ def provide_handle_block(block_event: BlockEvent, config):
 
 
 def handle_block(block_event: BlockEvent):
-    global is_training, background_training_task
+    global is_training, background_training_task, SHARDING_BOT_ID, SHARDING_CLUSTER_SIZE
     import src.config as config
+
+    if SHARDING_BOT_ID == -1 or SHARDING_CLUSTER_SIZE == -1:
+        update_sharding_stats(block_event)
+
     if is_training:
         return []
     if block_event.block.number % config.MAINTAIN_INTERVAL_BLK[int(block_event.network)] == 0:
