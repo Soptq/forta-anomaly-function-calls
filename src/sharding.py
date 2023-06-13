@@ -12,7 +12,7 @@ scannerRegistry = web3.eth.contract(address=Web3.toChecksumAddress(SCANNER_POOL_
 
 
 def hex_to_int(h):
-    return int(h, 0)
+    return int(h.lower(), 0)
 
 
 def int_to_address(i):
@@ -30,7 +30,7 @@ def get_bot_info():
 
 
 def get_scanners():
-    bot_id, scanner = get_bot_info()
+    bot_id, scanner_ = get_bot_info()
     n_scanners = dispatch.functions.numScannersFor(hex_to_int(bot_id)).call()
 
     scanners = []
@@ -50,7 +50,7 @@ def get_scanners():
             scanners_by_chain[chain_id] = []
         scanners_by_chain[chain_id].append(scanner)
 
-    return bot_id, scanner, scanners_by_chain
+    return bot_id, hex_to_int(scanner_), scanners_by_chain
 
 
 def get_sharding_stats(chain_id):
