@@ -1,11 +1,11 @@
 import json
 from forta_agent import Web3, fetch_jwt, decode_jwt
-from constants import DISPATCH_CONTRACT_ADDRESS, SCANNER_POOL_CONTRACT_ADDRESS
+from src.constants import DISPATCH_CONTRACT_ADDRESS, SCANNER_POOL_CONTRACT_ADDRESS
 
 polygon_provider = Web3.HTTPProvider('https://polygon-rpc.com')
 web3 = Web3(polygon_provider)
-dispatch_abi = json.load(open('abi/DispatchAbi.json'))
-scanner_pool_abi = json.load(open('abi/ScannerPoolRegistryABI.json'))
+dispatch_abi = json.load(open('src/abi/DispatchAbi.json'))
+scanner_pool_abi = json.load(open('src/abi/ScannerPoolRegistryABI.json'))
 
 dispatch = web3.eth.contract(address=Web3.toChecksumAddress(DISPATCH_CONTRACT_ADDRESS), abi=dispatch_abi)
 scannerRegistry = web3.eth.contract(address=Web3.toChecksumAddress(SCANNER_POOL_CONTRACT_ADDRESS), abi=scanner_pool_abi)
