@@ -1,4 +1,4 @@
-forta_agent>=0.1.15
+forta_agent>=0.1.33
 setuptools
 scikit-learn
 cachetools
